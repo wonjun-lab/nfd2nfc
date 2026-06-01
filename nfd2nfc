@@ -1,0 +1,127 @@
+#!/usr/bin/perl
+#
+# nfd2nfc — macOS 한글 파일명 자소분리(NFD) → 정상(NFC) 변환기
+#
+# macOS는 파일명을 NFD(분해형)로 저장합니다. 그래서 한글 파일명이
+# 윈도우나 일부 웹 업로드에서 'ㅇㅏㄴㄴㅕㅇ'처럼 자소분리되어 보입니다.
+# 이 스크립트는 파일/폴더 이름을 NFC(조합형)로 바꿔 문제를 없앱니다.
+# (보이는 글자는 그대로, 내부 유니코드 인코딩만 정규화 — 안전합니다.)
+#
+# 의존성 없음: macOS 기본 perl 만으로 동작합니다.
+#
+# 사용법:
+#   nfd2nfc [옵션] <파일/폴더 ...>
+# 옵션:
+#   -n, --dry-run     실제로 바꾸지 않고 바뀔 내용만 미리보기
+#       --no-recurse  폴더 안쪽까지 들어가지 않고 지정한 항목만 처리
+#       --notify      완료 후 macOS 알림 표시
+#   -v, --verbose     변경 내역을 한 줄씩 출력
+#   -h, --help        도움말
+
+use strict;
+use warnings;
+use Unicode::Normalize qw(NFC);
+use Encode qw(decode_utf8 encode_utf8);
+use Getopt::Long qw(GetOptions);
+
+my ($dry, $recurse, $notify, $verbose, $help) = (0, 1, 0, 0, 0);
+GetOptions(
+    'dry-run|n'  => \$dry,
+    'recurse!'   => \$recurse,
+    'notify'     => \$notify,
+    'verbose|v'  => \$verbose,
+    'help|h'     => \$help,
+) or usage(1);
+
+usage(0) if $help;
+usage(1) unless @ARGV;
+
+sub usage {
+    my $code = shift // 0;
+    print <<'TXT';
+nfd2nfc — macOS 한글 파일명 NFD→NFC 변환기
+
+사용법:  nfd2nfc [옵션] <파일/폴더 ...>
+
+옵션:
+  -n, --dry-run     미리보기 (실제로 바꾸지 않음)
+      --no-recurse  지정한 항목만 처리 (하위 폴더 제외)
+      --notify      완료 후 macOS 알림
+  -v, --verbose     변경 내역 출력
+  -h, --help        이 도움말
+TXT
+    exit $code;
+}
+
+# 1) 대상 경로 수집 (바이트 문자열 그대로 다룸 = 파일시스템 안전)
+my @targets;
+sub collect {
+    my ($path) = @_;
+    $path =~ s{/+$}{};                 # 끝 슬래시 제거
+    return if $path eq '';
+    push @targets, $path;
+    if ($recurse && -d $path && !-l $path) {
+        if (opendir(my $dh, $path)) {
+            my @entries = readdir($dh);
+            closedir($dh);
+            for my $e (@entries) {
+                next if $e eq '.' || $e eq '..';
+                collect("$path/$e");
+            }
+        } else {
+            warn "열 수 없음: $path ($!)\n";
+        }
+    }
+}
+collect($_) for @ARGV;
+
+# 2) 깊은 경로부터 처리(자식 → 부모) 해야 폴더 이름을 바꿔도 경로가 안 깨짐
+my @sorted = sort { ($b =~ tr{/}{}) <=> ($a =~ tr{/}{}) } @targets;
+
+# 3) 변환
+my ($changed, $skipped) = (0, 0);
+for my $p (@sorted) {
+    my $i    = rindex($p, '/');
+    my $dir  = $i < 0 ? '' : substr($p, 0, $i + 1);
+    my $base = $i < 0 ? $p : substr($p, $i + 1);
+
+    # 파일명이 올바른 UTF-8이 아니면 건너뜀
+    # (주의: decode_utf8 은 CHECK 인자를 주면 원본 스칼라를 비우므로 사본을 디코드)
+    my $u = eval { my $copy = $base; decode_utf8($copy, Encode::FB_CROAK) };
+    next unless defined $u;
+
+    my $newbase = encode_utf8(NFC($u));
+    next if $newbase eq $base;             # 이미 NFC → 변경 불필요
+
+    my $new = $dir . $newbase;
+    if (-e $new || -l $new) {
+        warn "건너뜀(같은 이름 존재): $p\n";
+        $skipped++;
+        next;
+    }
+
+    if ($dry) {
+        print "[미리보기] $p  →  $new\n";
+        $changed++;
+    } elsif (rename($p, $new)) {
+        print "변경: $p  →  $new\n" if $verbose;
+        $changed++;
+    } else {
+        warn "실패: $p ($!)\n";
+        $skipped++;
+    }
+}
+
+# 4) 요약 / 알림
+my $summary = $dry
+    ? "미리보기: ${changed}개 변경 예정"
+    : "완료: ${changed}개 변경"
+        . ($skipped ? ", ${skipped}개 건너뜀" : "");
+print "$summary\n";
+
+if ($notify && !$dry) {
+    my $msg = $summary;
+    $msg =~ s/"/\\"/g;
+    system('/usr/bin/osascript', '-e',
+           qq{display notification "$msg" with title "NFC 이름 정리"});
+}
