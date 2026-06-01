@@ -14,13 +14,16 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Quick Action zip 빌드
-        run: ./build-workflow.sh
+        run: |
+          ./build-workflow.sh
+          # 릴리스 자산 파일명은 ASCII로 (GitHub이 한글 자산명을 변형/깨뜨릴 수 있음).
+          # zip 내부 폴더명은 그대로 "NFC로 이름 정리.workflow".
+          cp "NFC로 이름 정리.workflow.zip" nfd2nfc-quick-action.zip
 
       - name: GitHub Release 생성 + zip 첨부
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            "NFC로 이름 정리.workflow.zip" \
-            --title "${GITHUB_REF_NAME}" \
-            --generate-notes
+          gh release create "${GITHUB_REF_NAME}" nfd2nfc-quick-action.zip \
+            --title "${GITHUB_REF_NAME}" --generate-notes \
+          || gh release upload "${GITHUB_REF_NAME}" nfd2nfc-quick-action.zip --clobber
