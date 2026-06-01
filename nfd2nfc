@@ -27,7 +27,7 @@ use Getopt::Long qw(GetOptions);
 
 our $VERSION = "1.0.1";
 
-my ($dry, $recurse, $notify, $verbose, $help, $version) = (0, 1, 0, 0, 0, 0);
+my ($dry, $recurse, $notify, $verbose, $help, $version, $reveal) = (0, 1, 0, 0, 0, 0, 0);
 # 대소문자 구분: -v(verbose)와 -V(version)가 섞이지 않도록.
 # (Getopt::Long은 기본적으로 대소문자를 무시해 -v/-V를 같은 옵션으로 취급한다)
 Getopt::Long::Configure('no_ignore_case');
@@ -35,6 +35,7 @@ GetOptions(
     'dry-run|n'  => \$dry,
     'recurse!'   => \$recurse,
     'notify'     => \$notify,
+    'reveal'     => \$reveal,
     'verbose|v'  => \$verbose,
     'version|V'  => \$version,
     'help|h'     => \$help,
@@ -43,6 +44,9 @@ GetOptions(
 if ($version) { print "nfd2nfc $VERSION\n"; exit 0; }
 usage(0) if $help;
 usage(1) unless @ARGV;
+
+# 사용자가 선택한 최상위 항목(옵션 제거 후 남은 인자) — 완료 후 Finder에 보여줄 대상
+my @inputs = @ARGV;
 
 sub usage {
     my $code = shift // 0;
@@ -55,6 +59,7 @@ nfd2nfc — macOS 한글 파일명 NFD→NFC 변환기
   -n, --dry-run     미리보기 (실제로 바꾸지 않음)
       --no-recurse  지정한 항목만 처리 (하위 폴더 제외)
       --notify      완료 후 macOS 알림
+      --reveal      완료 후 Finder에서 대상 보여주기
   -v, --verbose     변경 내역 출력
   -V, --version     버전 출력
   -h, --help        이 도움말
@@ -140,4 +145,41 @@ if ($notify && !$dry) {
     $msg =~ s/"/\\"/g;
     system('/usr/bin/osascript', '-e',
            qq{display notification "$msg" with title "NFC 이름 정리"});
+}
+
+# 5) Finder에 결과 보여주기 (Quick Action용).
+#    선택한 최상위 항목들의 '최종(NFC) 경로'를 Finder에서 보여준다.
+#    - 폴더 하나만 선택했으면 그 폴더를 열어 정리된 내용을 바로 보여줌
+#    - 그 외엔 해당 항목들을 선택 상태로 표시(reveal)
+if ($reveal && !$dry) {
+    my @final;
+    for my $arg (@inputs) {
+        (my $a = $arg) =~ s{/+$}{};
+        next if $a eq '';
+        my $i = rindex($a, '/');
+        my $dir  = $i < 0 ? '' : substr($a, 0, $i + 1);
+        my $base = $i < 0 ? $a : substr($a, $i + 1);
+        my $u = eval { my $c = $base; decode_utf8($c, Encode::FB_CROAK) };
+        my $fb = defined $u ? encode_utf8(NFC($u)) : $base;
+        my $fp = $dir . $fb;
+        $fp = $a unless -e $fp;        # 이름이 안 바뀌었으면 원본
+        my $abs = eval { require Cwd; Cwd::abs_path($fp) };
+        push @final, $abs if defined $abs && -e $abs;
+    }
+    reveal_in_finder(@final) if @final;
+}
+
+# 주어진 절대경로들을 Finder에서 보여준다(폴더 1개면 열기, 그 외엔 선택).
+sub reveal_in_finder {
+    my @paths = @_;
+    my $esc = sub { my $p = shift; $p =~ s/\\/\\\\/g; $p =~ s/"/\\"/g; $p };
+    my $script;
+    if (@paths == 1 && -d $paths[0]) {
+        my $p = $esc->($paths[0]);
+        $script = qq{tell application "Finder"\nactivate\nopen (POSIX file "$p" as alias)\nend tell};
+    } else {
+        my $list = join(", ", map { 'POSIX file "' . $esc->($_) . '"' } @paths);
+        $script = qq{tell application "Finder"\nactivate\nreveal {$list}\nend tell};
+    }
+    system('/usr/bin/osascript', '-e', $script);
 }

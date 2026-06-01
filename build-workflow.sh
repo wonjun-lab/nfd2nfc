@@ -32,7 +32,7 @@ build_workflow_bundle() {
         # Quick Action이 실행할 셸 명령:
         #   perl이 스크립트를 stdin(heredoc)으로 읽고, 선택된 파일들을 인자("$@")로 받는다.
         #   프로그램이 셸 명령줄이 아니라 heredoc 본문에 있으므로 셸 따옴표/이스케이프가 불필요.
-        my $cmd = qq{/usr/bin/perl - --notify -- "\$\@" <<'NFD2NFC_EOF'\n}
+        my $cmd = qq{/usr/bin/perl - --reveal -- "\$\@" <<'NFD2NFC_EOF'\n}
                 . $body
                 . qq{NFD2NFC_EOF\n};
 
