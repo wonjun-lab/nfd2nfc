@@ -21,36 +21,11 @@
 
 ---
 
-<table>
-<tr>
-<td width="33%" align="center">
-<img src="https://api.iconify.design/ph/feather-bold.svg?color=%236E7DF2&width=30" width="30" /><br>
-<b>의존성 0</b><br><sub>macOS 기본 perl만 사용</sub>
-</td>
-<td width="33%" align="center">
-<img src="https://api.iconify.design/ph/cursor-click-bold.svg?color=%236E7DF2&width=30" width="30" /><br>
-<b>Finder 우클릭</b><br><sub>빠른 동작 메뉴 통합</sub>
-</td>
-<td width="33%" align="center">
-<img src="https://api.iconify.design/ph/terminal-window-bold.svg?color=%236E7DF2&width=30" width="30" /><br>
-<b>CLI 명령</b><br><sub>스크립트·자동화에</sub>
-</td>
-</tr>
-<tr>
-<td align="center">
-<img src="https://api.iconify.design/ph/folders-bold.svg?color=%236E7DF2&width=30" width="30" /><br>
-<b>폴더 통째 일괄</b><br><sub>하위까지 한 번에</sub>
-</td>
-<td align="center">
-<img src="https://api.iconify.design/ph/shield-check-bold.svg?color=%236E7DF2&width=30" width="30" /><br>
-<b>안전 · 멱등</b><br><sub>여러 번 실행해도 OK</sub>
-</td>
-<td align="center">
-<img src="https://api.iconify.design/ph/bell-bold.svg?color=%236E7DF2&width=30" width="30" /><br>
-<b>완료 알림</b><br><sub>끝나면 macOS 알림</sub>
-</td>
-</tr>
-</table>
+<div align="center">
+
+<img src="https://api.iconify.design/ph/feather-bold.svg?color=%236E7DF2&width=17" width="17" align="center" /> **의존성 0** <sub>perl만</sub> &nbsp;·&nbsp; <img src="https://api.iconify.design/ph/cursor-click-bold.svg?color=%236E7DF2&width=17" width="17" align="center" /> **Finder 우클릭** <sub>빠른 동작</sub> &nbsp;·&nbsp; <img src="https://api.iconify.design/ph/terminal-window-bold.svg?color=%236E7DF2&width=17" width="17" align="center" /> **CLI 명령** <sub>자동화</sub> &nbsp;·&nbsp; <img src="https://api.iconify.design/ph/folders-bold.svg?color=%236E7DF2&width=17" width="17" align="center" /> **폴더 일괄** <sub>하위까지</sub> &nbsp;·&nbsp; <img src="https://api.iconify.design/ph/shield-check-bold.svg?color=%236E7DF2&width=17" width="17" align="center" /> **안전** <sub>여러 번 실행해도 OK</sub> &nbsp;·&nbsp; <img src="https://api.iconify.design/ph/bell-bold.svg?color=%236E7DF2&width=17" width="17" align="center" /> **완료 알림** <sub>macOS 알림</sub>
+
+</div>
 
 ---
 
