@@ -8,3 +8,7 @@ Icon
 # Editor
 *.swp
 *~
+
+# 빌드 산출물 (build-workflow.sh가 생성, 릴리스 자산으로 배포)
+NFC로 이름 정리.workflow.zip
+*.workflow/
