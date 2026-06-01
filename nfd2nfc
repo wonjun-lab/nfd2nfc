@@ -94,8 +94,15 @@ for my $p (@sorted) {
     next if $newbase eq $base;             # 이미 NFC → 변경 불필요
 
     my $new = $dir . $newbase;
-    if (-e $new || -l $new) {
-        warn "건너뜀(같은 이름 존재): $p\n";
+
+    # macOS 파일시스템(APFS·HFS+)은 정규화 비구분(normalization-insensitive)이라
+    # NFD로 저장된 파일도 NFC 이름으로 -e/lstat 검사하면 "존재"로 잡힌다.
+    # 즉 단순 -e 검사는 자기 자신을 충돌로 오인해 전부 건너뛴다.
+    # 따라서 '진짜 다른 파일'(다른 inode)이 그 이름을 차지한 경우에만 건너뛴다.
+    my @cur = lstat($p);
+    my @tgt = lstat($new);
+    if (@tgt && (!@cur || $tgt[0] != $cur[0] || $tgt[1] != $cur[1])) {
+        warn "건너뜀(같은 이름의 다른 항목 존재): $p\n";
         $skipped++;
         next;
     }
