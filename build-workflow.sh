@@ -178,9 +178,7 @@ build_workflow_bundle() {
 \t\t<key>processesInput</key>
 \t\t<integer>0</integer>
 \t\t<key>serviceApplicationBundleID</key>
-\t\t<string>com.apple.finder</string>
-\t\t<key>serviceApplicationPath</key>
-\t\t<string>/System/Library/CoreServices/Finder.app</string>
+\t\t<string></string>
 \t\t<key>serviceInputTypeIdentifier</key>
 \t\t<string>com.apple.Automator.fileSystemObject</string>
 \t\t<key>serviceOutputTypeIdentifier</key>
@@ -206,6 +204,8 @@ GENWFLOW
 <dict>
 \t<key>CFBundleName</key>
 \t<string>$name</string>
+\t<key>CFBundleIdentifier</key>
+\t<string>com.wonjun-lab.nfd2nfc.quickaction</string>
 \t<key>NSServices</key>
 \t<array>
 \t\t<dict>
@@ -216,11 +216,6 @@ GENWFLOW
 \t\t\t</dict>
 \t\t\t<key>NSMessage</key>
 \t\t\t<string>runWorkflowAsService</string>
-\t\t\t<key>NSRequiredContext</key>
-\t\t\t<dict>
-\t\t\t\t<key>NSApplicationIdentifier</key>
-\t\t\t\t<string>com.apple.finder</string>
-\t\t\t</dict>
 \t\t\t<key>NSSendFileTypes</key>
 \t\t\t<array>
 \t\t\t\t<string>public.item</string>
