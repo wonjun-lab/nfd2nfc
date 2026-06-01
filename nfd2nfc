@@ -25,7 +25,7 @@ use Unicode::Normalize qw(NFC);
 use Encode qw(decode_utf8 encode_utf8);
 use Getopt::Long qw(GetOptions);
 
-our $VERSION = "1.0.0";
+our $VERSION = "1.0.1";
 
 my ($dry, $recurse, $notify, $verbose, $help, $version) = (0, 1, 0, 0, 0, 0);
 # 대소문자 구분: -v(verbose)와 -V(version)가 섞이지 않도록.

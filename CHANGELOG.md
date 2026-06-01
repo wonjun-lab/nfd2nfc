@@ -4,6 +4,20 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/),
 버전은 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## [1.0.1] - 2026-06-01
+
+### Changed
+- Finder 통합을 **서비스 → 빠른 동작(Quick Action)**으로 승격 — 우클릭 시
+  "빠른 동작" 하위 메뉴에 표시되도록 `serviceApplicationBundleID`를 비우고
+  `NSRequiredContext`(Finder 제한)를 제거.
+- `install.sh` 가 설치 후 Finder를 재시작해, 새 빠른 동작이 우클릭 메뉴에 즉시 표시됨.
+
+### Fixed
+- `-v`(verbose)가 `-V`(version)로 오인되던 회귀 — `Getopt::Long`의 기본
+  대소문자 무시 때문. `no_ignore_case`로 구분.
+
+[1.0.1]: https://github.com/wonjun-lab/nfd2nfc/releases/tag/v1.0.1
+
 ## [1.0.0] - 2026-06-01
 
 ### Added
