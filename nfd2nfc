@@ -16,6 +16,7 @@
 #       --no-recurse  폴더 안쪽까지 들어가지 않고 지정한 항목만 처리
 #       --notify      완료 후 macOS 알림 표시
 #   -v, --verbose     변경 내역을 한 줄씩 출력
+#   -V, --version     버전 출력
 #   -h, --help        도움말
 
 use strict;
@@ -24,15 +25,19 @@ use Unicode::Normalize qw(NFC);
 use Encode qw(decode_utf8 encode_utf8);
 use Getopt::Long qw(GetOptions);
 
-my ($dry, $recurse, $notify, $verbose, $help) = (0, 1, 0, 0, 0);
+our $VERSION = "1.0.0";
+
+my ($dry, $recurse, $notify, $verbose, $help, $version) = (0, 1, 0, 0, 0, 0);
 GetOptions(
     'dry-run|n'  => \$dry,
     'recurse!'   => \$recurse,
     'notify'     => \$notify,
     'verbose|v'  => \$verbose,
+    'version|V'  => \$version,
     'help|h'     => \$help,
 ) or usage(1);
 
+if ($version) { print "nfd2nfc $VERSION\n"; exit 0; }
 usage(0) if $help;
 usage(1) unless @ARGV;
 
@@ -48,6 +53,7 @@ nfd2nfc — macOS 한글 파일명 NFD→NFC 변환기
       --no-recurse  지정한 항목만 처리 (하위 폴더 제외)
       --notify      완료 후 macOS 알림
   -v, --verbose     변경 내역 출력
+  -V, --version     버전 출력
   -h, --help        이 도움말
 TXT
     exit $code;

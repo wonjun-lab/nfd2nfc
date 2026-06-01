@@ -88,6 +88,13 @@ make_fixture "$TMP/t6"
 ' "$TMP/qa_cmd.sh" "$TMP/t6"
 if [ "$(count_nfd "$TMP/t6")" -eq 0 ]; then ok "Quick Action 명령 실행 변환 성공"; else ng "Quick Action 명령 변환 실패"; fi
 
+# [버전] --version 출력 형식
+ver_out=$(/usr/bin/perl "$NFD2NFC" --version 2>&1)
+if echo "$ver_out" | grep -Eq '^nfd2nfc [0-9]+\.[0-9]+\.[0-9]+$'; then ok "--version 출력 형식"; else ng "--version 형식 이상: $ver_out"; fi
+# -V 단축 일치
+v2=$(/usr/bin/perl "$NFD2NFC" -V 2>&1)
+if [ "$v2" = "$ver_out" ]; then ok "-V 단축 일치"; else ng "-V 불일치: $v2"; fi
+
 echo "----"
 echo "통과 $PASS / 실패 $FAIL"
 [ "$FAIL" -eq 0 ]
