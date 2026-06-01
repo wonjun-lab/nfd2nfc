@@ -23,7 +23,10 @@
 
 <div align="center">
 
-<img src="https://api.iconify.design/ph/feather-bold.svg?color=%236E7DF2&width=17" width="17" align="center" /> **의존성 0** <sub>perl만</sub> &nbsp;·&nbsp; <img src="https://api.iconify.design/ph/cursor-click-bold.svg?color=%236E7DF2&width=17" width="17" align="center" /> **Finder 우클릭** <sub>빠른 동작</sub> &nbsp;·&nbsp; <img src="https://api.iconify.design/ph/terminal-window-bold.svg?color=%236E7DF2&width=17" width="17" align="center" /> **CLI 명령** <sub>자동화</sub> &nbsp;·&nbsp; <img src="https://api.iconify.design/ph/folders-bold.svg?color=%236E7DF2&width=17" width="17" align="center" /> **폴더 일괄** <sub>하위까지</sub> &nbsp;·&nbsp; <img src="https://api.iconify.design/ph/shield-check-bold.svg?color=%236E7DF2&width=17" width="17" align="center" /> **안전** <sub>여러 번 실행해도 OK</sub> &nbsp;·&nbsp; <img src="https://api.iconify.design/ph/bell-bold.svg?color=%236E7DF2&width=17" width="17" align="center" /> **완료 알림** <sub>macOS 알림</sub>
+| | | |
+| :---: | :---: | :---: |
+| <img src="https://api.iconify.design/ph/feather-bold.svg?color=%236E7DF2&width=28" width="28" /><br>**의존성 0**<br><sub>perl만</sub> | <img src="https://api.iconify.design/ph/cursor-click-bold.svg?color=%236E7DF2&width=28" width="28" /><br>**Finder 우클릭**<br><sub>빠른 동작</sub> | <img src="https://api.iconify.design/ph/terminal-window-bold.svg?color=%236E7DF2&width=28" width="28" /><br>**CLI 명령**<br><sub>자동화</sub> |
+| <img src="https://api.iconify.design/ph/folders-bold.svg?color=%236E7DF2&width=28" width="28" /><br>**폴더 일괄**<br><sub>하위까지</sub> | <img src="https://api.iconify.design/ph/shield-check-bold.svg?color=%236E7DF2&width=28" width="28" /><br>**안전**<br><sub>여러 번 실행해도 OK</sub> | <img src="https://api.iconify.design/ph/bell-bold.svg?color=%236E7DF2&width=28" width="28" /><br>**완료 알림**<br><sub>macOS 알림</sub> |
 
 </div>
 
