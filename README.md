@@ -203,9 +203,9 @@ characters stay the same; only the underlying Unicode form is normalized.
 
 | Install | How |
 | --- | --- |
-| 🍺 Homebrew (CLI) | `brew install wonjun-lab/tap/nfd2nfc` |
-| 🖱️ Finder only (no terminal) | Download `nfd2nfc-quick-action.zip` from [Releases](https://github.com/wonjun-lab/nfd2nfc/releases/latest), unzip, double-click `NFC로 이름 정리.workflow` |
-| 🚀 CLI + Finder Quick Action | `git clone … && cd nfd2nfc && ./install.sh` |
+| <img src="https://api.iconify.design/simple-icons/homebrew.svg?color=%236E7DF2&width=18" width="18" align="center" /> Homebrew (CLI) | `brew install wonjun-lab/tap/nfd2nfc` |
+| <img src="https://api.iconify.design/ph/cursor-click-bold.svg?color=%236E7DF2&width=18" width="18" align="center" /> Finder only (no terminal) | Download `nfd2nfc-quick-action.zip` from [Releases](https://github.com/wonjun-lab/nfd2nfc/releases/latest), unzip, double-click `NFC로 이름 정리.workflow` |
+| <img src="https://api.iconify.design/ph/terminal-window-bold.svg?color=%236E7DF2&width=18" width="18" align="center" /> CLI + Finder Quick Action | `git clone … && cd nfd2nfc && ./install.sh` |
 
 ```
 nfd2nfc [--dry-run] [--no-recurse] [--notify] [-v] [-V] <paths…>
