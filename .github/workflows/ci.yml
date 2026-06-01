@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: perl 문법 검사
+        run: /usr/bin/perl -c nfd2nfc
+
+      - name: shellcheck 설치
+        run: brew install shellcheck
+
+      - name: shellcheck
+        run: shellcheck install.sh uninstall.sh build-workflow.sh test.sh
+
+      - name: 통합 테스트
+        run: ./test.sh
