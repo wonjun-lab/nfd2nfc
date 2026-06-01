@@ -28,6 +28,9 @@ use Getopt::Long qw(GetOptions);
 our $VERSION = "1.0.0";
 
 my ($dry, $recurse, $notify, $verbose, $help, $version) = (0, 1, 0, 0, 0, 0);
+# 대소문자 구분: -v(verbose)와 -V(version)가 섞이지 않도록.
+# (Getopt::Long은 기본적으로 대소문자를 무시해 -v/-V를 같은 옵션으로 취급한다)
+Getopt::Long::Configure('no_ignore_case');
 GetOptions(
     'dry-run|n'  => \$dry,
     'recurse!'   => \$recurse,

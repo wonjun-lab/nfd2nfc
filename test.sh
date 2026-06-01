@@ -94,6 +94,10 @@ if echo "$ver_out" | grep -Eq '^nfd2nfc [0-9]+\.[0-9]+\.[0-9]+$'; then ok "--ver
 # -V 단축 일치
 v2=$(/usr/bin/perl "$NFD2NFC" -V 2>&1)
 if [ "$v2" = "$ver_out" ]; then ok "-V 단축 일치"; else ng "-V 불일치: $v2"; fi
+# 회귀 방지: 소문자 -v 는 verbose여야 하며 version으로 새면 안 됨
+make_fixture "$TMP/tv"
+vout=$(/usr/bin/perl "$NFD2NFC" -v "$TMP/tv" 2>&1)
+if echo "$vout" | grep -q "변경:" && [ "$(count_nfd "$TMP/tv")" -eq 0 ]; then ok "-v 는 verbose(변환 수행)"; else ng "-v 가 verbose로 동작 안 함: $vout"; fi
 
 echo "----"
 echo "통과 $PASS / 실패 $FAIL"
