@@ -6,7 +6,11 @@
 ## 목표
 
 `nfd2nfc`를 일반 공개 릴리스(v1.0.0) 품질로 다듬는다. 저장소를 정리하고,
-버전 체계·CI·문서·기여 메타를 갖추며, 두 가지 편의 기능(Homebrew 설치, 충돌 처리 옵션)을 추가한다.
+버전 체계·CI·문서·기여 메타를 갖추며, 편의 기능으로 Homebrew 설치를 추가한다.
+
+> **설계 변경(2026-06-01):** 당초 `--on-conflict` 옵션을 포함했으나, 검증 결과 macOS
+> 정규화 비구분 FS에서는 제자리 정규화 시 대상 NFC 이름이 항상 원본과 같은 inode라
+> "진짜 충돌"이 발생할 수 없어(수도코드·테스트 불가) **기능을 제외**했다.
 
 ## 비범위 (YAGNI)
 
@@ -44,28 +48,16 @@ README.md  CHANGELOG.md  CONTRIBUTING.md  LICENSE  .gitignore
 - 릴리스 태그(`vX.Y.Z`)와 수동 동기. 릴리스 절차를 CONTRIBUTING/CHANGELOG에 문서화.
 - GetOptions에 `'version|V' => \$version` 추가, `usage` 위에서 처리.
 
-### 2. `nfd2nfc` — 충돌 처리 옵션
-
-- 신규 옵션 `--on-conflict <skip|number>`, 기본값 `skip`(현행 호환).
-- 충돌 판정은 기존 그대로 **inode 비교**(진짜 다른 파일일 때만 충돌).
-- `skip`: 현행대로 경고 후 건너뜀.
-- `number`: 비어 있는 첫 번호를 찾아 Finder식으로 이름 부여 후 rename.
-  - 파일: 마지막 확장자 앞에 ` (N)` 삽입 — `보고서.txt` → `보고서 (2).txt`.
-    다중 확장자(`a.tar.gz`)는 마지막 점 기준(`a.tar (2).gz`) — 단순·예측가능 우선.
-  - 점 없는 이름/폴더: 끝에 ` (N)` — `사진모음` → `사진모음 (2)`.
-  - N은 2부터 증가, 후보가 비어 있을 때까지(역시 inode 비교로 자기 자신 제외). 안전 상한(예: 9999) 후 포기·경고.
-- 잘못된 값은 `usage(1)`.
-
-### 3. `test.sh` — 통합 테스트
+### 2. `test.sh` — 통합 테스트
 
 - 검증된 수동 테스트를 스크립트화. macOS(APFS)에서만 의미 있음.
 - 케이스: 기본 NFD→NFC 변환, 중첩 폴더, idempotent 재실행, dry-run 무변경,
-  `--no-recurse`, 심볼릭 링크 미추적, `--version`, `--on-conflict number`,
+  `--no-recurse`, 심볼릭 링크 미추적, `--version`,
   생성된 Quick Action 명령(임시파일·stdin 두 모드) 실행.
 - 각 케이스 통과/실패를 출력하고 실패 시 비0 종료(CI 게이트).
 - 임시 작업 디렉토리(`mktemp -d`) 사용, 종료 시 정리.
 
-### 4. `nfd2nfc.rb` — Homebrew formula
+### 3. `nfd2nfc.rb` — Homebrew formula
 
 - 의존성 없는 단일 perl 스크립트 → `bin.install "nfd2nfc"`.
 - `url`은 GitHub 태그 tarball, `sha256`은 릴리스 후 채움(릴리스 절차에 명시).
@@ -73,7 +65,7 @@ README.md  CHANGELOG.md  CONTRIBUTING.md  LICENSE  .gitignore
 - 배포는 별도 `wonjun-lab/homebrew-tap` 리포 필요. 이 파일은 원본이며,
   릴리스마다 tap 리포로 복사·`sha256` 갱신(README/CONTRIBUTING에 문서화).
 
-### 5. CI — `.github/workflows/ci.yml`
+### 4. CI — `.github/workflows/ci.yml`
 
 - 트리거: push, pull_request.
 - 러너: **macos-latest** (정규화 비구분 FS 동작 검증 필수).
@@ -81,7 +73,7 @@ README.md  CHANGELOG.md  CONTRIBUTING.md  LICENSE  .gitignore
   → `./test.sh`.
 - shellcheck는 `brew install shellcheck`로 설치(또는 사전설치 확인).
 
-### 6. 릴리스 — `.github/workflows/release.yml`
+### 5. 릴리스 — `.github/workflows/release.yml`
 
 - 트리거: `v*` 태그 push.
 - 러너: macos-latest.
@@ -89,12 +81,12 @@ README.md  CHANGELOG.md  CONTRIBUTING.md  LICENSE  .gitignore
   또는 `softprops/action-gh-release`로 zip 첨부.
 - 권한: `contents: write`.
 
-### 7. 문서/메타
+### 6. 문서/메타
 
 - **README**: 영문 섹션 정리, 배지(license·CI·version), 설치 경로 3종 명시
   (Homebrew / install.sh / Releases zip), 데모 GIF 플레이스홀더.
 - **CHANGELOG.md**: Keep a Changelog 형식. v1.0.0 항목 = NFD→NFC 충돌검사 버그 수정,
-  한 줄 설치, Quick Action 빌더, `--version`, `--on-conflict`.
+  한 줄 설치, Quick Action 빌더, `--version`.
 - **CONTRIBUTING.md**: 개발·테스트(`./test.sh`)·릴리스 절차(태그→CI→tap 갱신).
 - **이슈 템플릿**: bug_report, feature_request.
 
