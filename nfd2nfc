@@ -62,6 +62,7 @@ usage(1) unless @ARGV;
 
 # quiet는 verbose보다 우선(둘 다 주면 조용히). --force가 --skip(기본)을 이긴다.
 $verbose = 0 if $quiet;
+warn "경고: --force와 --skip을 함께 지정 — --force가 우선합니다.\n" if $force && $skip;
 
 # 사용자가 선택한 최상위 항목(옵션 제거 후 남은 인자) — 완료 후 Finder에 보여줄 대상
 my @inputs = @ARGV;
@@ -84,26 +85,66 @@ nfd2nfc — macOS 한글 파일명 NFD→NFC 변환기
   -v, --verbose     변경 내역 출력
   -V, --version     버전 출력
   -h, --help        이 도움말
+
+  팁: '-'로 시작하는 파일명은 -- 뒤에 두세요  (예: nfd2nfc -- -파일.txt)
 TXT
     exit $code;
 }
 
 # 1) 대상 경로 수집 (바이트 문자열 그대로 다룸 = 파일시스템 안전)
 my @targets;
-my %seen;                              # 같은 경로 중복 수집 방지(카운트 부풀림·이중 rename 방지)
-my $missing = 0;                       # 존재하지 않는 최상위 입력 개수(종료 코드에 반영)
+my %seen;                              # 같은 디스크 항목 중복 수집 방지(카운트 부풀림·이중 rename 방지)
+my $missing = 0;                       # 존재하지 않는/읽을 수 없는 최상위 입력 개수(종료 코드에 반영)
+
+# 셸(zsh 등)은 glob·탭완성에서 인자를 NFC로 정규화해 넘기기도 한다. 그러면 디스크가 NFD인데도
+# 인자 basename이 NFC라 "이미 정규화됨"으로 오인해 변환을 건너뛴다(반대로 NFC 디스크에 NFD 인자를
+# 주면 실제 변화 없이 카운트만 오른다). 이를 막기 위해 최상위 인자를 '디스크에 실제로 저장된
+# 엔트리명'으로 바꾼다 — 부모 디렉토리를 readdir해 정규화-비구분으로 매칭되는 실제 이름을 찾는다.
+sub disk_real_path {
+    my ($path) = @_;
+    my $i = rindex($path, '/');
+    my $base = $i < 0 ? $path : substr($path, $i + 1);
+    return $path if $base eq '' || $base eq '.' || $base eq '..';
+    my $dir = $i < 0 ? '.' : (substr($path, 0, $i) eq '' ? '/' : substr($path, 0, $i));
+    my $u = eval { my $c = $base; decode_utf8($c, Encode::FB_CROAK) };
+    return $path unless defined $u;        # 비-UTF8 인자는 그대로 둔다
+    my $want = NFC($u);
+    opendir(my $dh, $dir) or return $path;
+    while (defined(my $e = readdir $dh)) {
+        next if $e eq '.' || $e eq '..';
+        my $eu = eval { my $c = $e; decode_utf8($c, Encode::FB_CROAK) };
+        next unless defined $eu;
+        if (NFC($eu) eq $want) {           # 정규화-비구분 매칭 = 같은 디스크 항목
+            closedir $dh;
+            my $prefix = $i < 0 ? '' : substr($path, 0, $i + 1);
+            return $prefix . $e;           # 디스크에 저장된 실제 바이트(NFD일 수도, NFC일 수도)
+        }
+    }
+    closedir $dh;
+    return $path;                          # 매칭 없음(존재 안 함 등) → 원본
+}
+
 sub collect {
+    no warnings 'recursion';               # 아주 깊은 트리에서 'Deep recursion' 경고 억제
     my ($path, $toplevel) = @_;
-    $path =~ s{/+$}{};                 # 끝 슬래시 제거
-    return if $path eq '';
-    # 사용자가 직접 지정한 최상위 경로가 없으면 알린다(오타 등 조용한 무시 방지).
-    # APFS는 정규화 비구분이라 NFD로 준 경로도 -e가 잡지만, 정말 없는 경로는 걸러진다.
-    if ($toplevel && !-e $path && !-l $path) {
-        warn "경고: 경로가 존재하지 않음: $path\n";
-        $missing++;
+    my $orig = $path;
+    $path =~ s{/+$}{};                     # 끝 슬래시 제거
+    if ($path eq '') {
+        # 빈 인자나 슬래시뿐인 인자('', '/', '//')는 변환 대상이 아니다(조용한 무시 방지).
+        if ($toplevel) { warn "경고: 처리할 수 없는 경로: '$orig'\n"; $missing++; }
         return;
     }
-    return if $seen{$path}++;          # 이미 수집한 경로는 건너뜀
+    if ($toplevel) {
+        # 사용자가 직접 지정한 최상위 경로가 없으면 알린다(오타 등 조용한 무시 방지).
+        # APFS는 정규화 비구분이라 NFD로 준 경로도 -e가 잡지만, 정말 없는 경로는 걸러진다.
+        if (!-e $path && !-l $path) {
+            warn "경고: 경로가 존재하지 않음: $path\n";
+            $missing++;
+            return;
+        }
+        $path = disk_real_path($path);     # 셸 정규화와 무관하게 디스크 실제 저장명을 사용
+    }
+    return if $seen{$path}++;              # 이미 수집한 경로는 건너뜀
     push @targets, $path;
     if ($recurse && -d $path && !-l $path) {
         if (opendir(my $dh, $path)) {
@@ -115,6 +156,7 @@ sub collect {
             }
         } else {
             warn "열 수 없음: $path ($!)\n";
+            $missing++;                    # 읽기 실패도 부분 실패로 exit code에 반영
         }
     }
 }
