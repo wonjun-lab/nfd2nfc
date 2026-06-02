@@ -6,6 +6,9 @@
 
 ## [Unreleased]
 
+### Added (자동 감시)
+- `nfd2nfc watch add/remove/list/on/off` — launchd `WatchPaths`로 등록 폴더를 감시해 NFD 파일 유입 시 자동으로 NFC 정리. 등록 시 즉시 1회 정리, 하위 폴더 포함, 변경 있을 때만 알림. 의존성 0(perl + launchd), 옵트인. 무한루프는 idempotent + `ThrottleInterval` 10초로 차단. 설정 `~/Library/Application Support/nfd2nfc/`, 로그 `~/Library/Logs/nfd2nfc-watch.log`.
+
 ### Changed (형식/FS 검토 후속)
 - `--force`가 실제로 **다른 항목을 덮어쓸 때 경고**를 출력(`덮어씀(기존 항목 영구 삭제)`) — loud opt-in. 충돌은 정규화-구분 FS에서만 발생하므로 macOS 기본 볼륨에선 무영향.
 - README에 **"바꾸는 범위" 섹션** 추가 — 파일 내용·형식 무관, **압축 파일 내부 엔트리명은 스코프 밖**(zip/tar/hwpx/docx), `.app` 번들 서명 주의, `--force` 데이터 손실은 정규화-구분 볼륨 한정임을 명시.
