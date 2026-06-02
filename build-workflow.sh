@@ -19,6 +19,14 @@ WORKFLOW_NAME="NFC로 이름 정리"
 # 주어진 경로에 완전한 .workflow 번들을 만든다(스크립트 본문 임베드).
 build_workflow_bundle() {
     bundle="$1"
+
+    # 안전장치: heredoc 종료 sentinel(NFD2NFC_EOF)이 스크립트 본문에 한 줄로 출현하면
+    # 임베드된 heredoc이 거기서 조기 종료돼 Quick Action이 조용히 깨진다(plutil lint는 통과).
+    if grep -qxF 'NFD2NFC_EOF' "$SCRIPT_SRC"; then
+        echo "오류: $SCRIPT_SRC 에 'NFD2NFC_EOF' 줄이 있어 heredoc 임베드가 깨집니다. sentinel을 바꾸세요." >&2
+        return 1
+    fi
+
     rm -rf "$bundle"
     mkdir -p "$bundle/Contents"
 
@@ -32,9 +40,14 @@ build_workflow_bundle() {
         # Quick Action이 실행할 셸 명령:
         #   perl이 스크립트를 stdin(heredoc)으로 읽고, 선택된 파일들을 인자("$@")로 받는다.
         #   프로그램이 셸 명령줄이 아니라 heredoc 본문에 있으므로 셸 따옴표/이스케이프가 불필요.
-        my $cmd = qq{/usr/bin/perl - --reveal -- "\$\@" <<'NFD2NFC_EOF'\n}
+        #   - --notify: 완료 토스트(변경/0변경 모두 피드백), --reveal: Finder에 결과 표시.
+        #   - 선택이 비면 정상 종료(빈 인자에 nfd2nfc가 exit 1 → Automator 실패 표시 방지).
+        #   - heredoc 뒤 'exit 0': perl이 부분 실패로 비0을 내도 GUI 피드백을 쓰는
+        #     Quick Action은 에러 다이얼로그를 띄우지 않도록 셸을 0으로 마친다.
+        my $cmd = qq{[ "\$#" -gt 0 ] || exit 0\n}
+                . qq{/usr/bin/perl - --reveal --notify -- "\$\@" <<'NFD2NFC_EOF'\n}
                 . $body
-                . qq{NFD2NFC_EOF\n};
+                . qq{NFD2NFC_EOF\nexit 0\n};
 
         # plist <string> 안에 들어가므로 XML 특수문자 이스케이프
         my $esc = $cmd;
@@ -228,8 +241,20 @@ PLIST
 GENPLIST
 }
 
-# 직접 실행되면: 저장소에 .workflow 빌드 후 zip 재생성
-if [ "${0##*/}" = "build-workflow.sh" ]; then
+# 직접 실행될 때만 저장소에 .workflow 빌드 후 zip 재생성한다.
+# source되면(install.sh가 함수 재사용 / 대화형 셸에서 함수만 사용) 이 블록을 건너뛴다.
+# sourced 판별: bash·sh는 BASH_SOURCE≠$0, zsh는 ZSH_EVAL_CONTEXT가 ':file'로 끝남.
+# (이전엔 $0 basename만 봐서 zsh `. ./build-workflow.sh` 시 오발 → 의도치 않은 빌드+삭제가 일어났다.)
+bw_sourced=1
+# shellcheck disable=SC3028,SC2128
+if [ -n "${BASH_SOURCE:-}" ]; then
+    [ "${BASH_SOURCE}" = "$0" ] && bw_sourced=0
+elif [ -n "${ZSH_EVAL_CONTEXT:-}" ]; then
+    case "$ZSH_EVAL_CONTEXT" in *:file) bw_sourced=1 ;; *) bw_sourced=0 ;; esac
+else
+    [ "${0##*/}" = "build-workflow.sh" ] && bw_sourced=0
+fi
+if [ "$bw_sourced" = 0 ]; then
     BUNDLE="$HERE/$WORKFLOW_NAME.workflow"
     build_workflow_bundle "$BUNDLE"
     # plist 유효성 검사
