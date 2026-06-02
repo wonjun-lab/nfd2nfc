@@ -15,9 +15,19 @@
 #   -n, --dry-run     실제로 바꾸지 않고 바뀔 내용만 미리보기
 #       --no-recurse  폴더 안쪽까지 들어가지 않고 지정한 항목만 처리
 #       --notify      완료 후 macOS 알림 표시
+#       --reveal      완료 후 Finder에서 대상 보여주기
+#   -q, --quiet       조용히 (요약 출력 생략, 경고·에러만)
+#   -f, --force       이름 충돌 시 덮어쓰기 (기본은 건너뜀)
+#       --skip        이름 충돌 시 건너뛰기 (기본)
 #   -v, --verbose     변경 내역을 한 줄씩 출력
 #   -V, --version     버전 출력
 #   -h, --help        도움말
+# (단문자 옵션은 묶어서 쓸 수 있음: 예) -nv == -n -v)
+#
+# 환경변수:
+#   NFD2NFC_NO_GUI=1  --notify/--reveal의 osascript 호출을 건너뜀(테스트·CI용)
+# 종료 코드:
+#   0 정상, 1 인자 오류 또는 변환 실패/충돌 스킵/존재하지 않는 입력이 있을 때
 
 use strict;
 use warnings;
@@ -27,15 +37,20 @@ use Getopt::Long qw(GetOptions);
 
 our $VERSION = "1.0.1";
 
-my ($dry, $recurse, $notify, $verbose, $help, $version, $reveal) = (0, 1, 0, 0, 0, 0, 0);
+my ($dry, $recurse, $notify, $verbose, $help, $version, $reveal, $quiet, $force, $skip)
+    = (0, 1, 0, 0, 0, 0, 0, 0, 0, 0);
 # 대소문자 구분: -v(verbose)와 -V(version)가 섞이지 않도록.
 # (Getopt::Long은 기본적으로 대소문자를 무시해 -v/-V를 같은 옵션으로 취급한다)
-Getopt::Long::Configure('no_ignore_case');
+# bundling: 단문자 옵션을 묶어서 쓸 수 있게(-nv == -n -v). 긴 옵션은 --로 시작하므로 안전.
+Getopt::Long::Configure('no_ignore_case', 'bundling');
 GetOptions(
     'dry-run|n'  => \$dry,
     'recurse!'   => \$recurse,
     'notify'     => \$notify,
     'reveal'     => \$reveal,
+    'quiet|q'    => \$quiet,
+    'force|f'    => \$force,    # 이름 충돌 시 덮어쓰기(데이터 손실 가능)
+    'skip'       => \$skip,     # 이름 충돌 시 건너뛰기(기본) — 명시용 별칭
     'verbose|v'  => \$verbose,
     'version|V'  => \$version,
     'help|h'     => \$help,
@@ -44,6 +59,9 @@ GetOptions(
 if ($version) { print "nfd2nfc $VERSION\n"; exit 0; }
 usage(0) if $help;
 usage(1) unless @ARGV;
+
+# quiet는 verbose보다 우선(둘 다 주면 조용히). --force가 --skip(기본)을 이긴다.
+$verbose = 0 if $quiet;
 
 # 사용자가 선택한 최상위 항목(옵션 제거 후 남은 인자) — 완료 후 Finder에 보여줄 대상
 my @inputs = @ARGV;
@@ -60,6 +78,9 @@ nfd2nfc — macOS 한글 파일명 NFD→NFC 변환기
       --no-recurse  지정한 항목만 처리 (하위 폴더 제외)
       --notify      완료 후 macOS 알림
       --reveal      완료 후 Finder에서 대상 보여주기
+  -q, --quiet       조용히 (요약 출력 생략, 경고·에러만 표시)
+  -f, --force       이름 충돌 시 덮어쓰기 (기본은 건너뜀, 데이터 손실 주의)
+      --skip        이름 충돌 시 건너뛰기 (기본)
   -v, --verbose     변경 내역 출력
   -V, --version     버전 출력
   -h, --help        이 도움말
@@ -69,10 +90,20 @@ TXT
 
 # 1) 대상 경로 수집 (바이트 문자열 그대로 다룸 = 파일시스템 안전)
 my @targets;
+my %seen;                              # 같은 경로 중복 수집 방지(카운트 부풀림·이중 rename 방지)
+my $missing = 0;                       # 존재하지 않는 최상위 입력 개수(종료 코드에 반영)
 sub collect {
-    my ($path) = @_;
+    my ($path, $toplevel) = @_;
     $path =~ s{/+$}{};                 # 끝 슬래시 제거
     return if $path eq '';
+    # 사용자가 직접 지정한 최상위 경로가 없으면 알린다(오타 등 조용한 무시 방지).
+    # APFS는 정규화 비구분이라 NFD로 준 경로도 -e가 잡지만, 정말 없는 경로는 걸러진다.
+    if ($toplevel && !-e $path && !-l $path) {
+        warn "경고: 경로가 존재하지 않음: $path\n";
+        $missing++;
+        return;
+    }
+    return if $seen{$path}++;          # 이미 수집한 경로는 건너뜀
     push @targets, $path;
     if ($recurse && -d $path && !-l $path) {
         if (opendir(my $dh, $path)) {
@@ -87,7 +118,7 @@ sub collect {
         }
     }
 }
-collect($_) for @ARGV;
+collect($_, 1) for @ARGV;
 
 # 2) 깊은 경로부터 처리(자식 → 부모) 해야 폴더 이름을 바꿔도 경로가 안 깨짐
 my @sorted = sort { ($b =~ tr{/}{}) <=> ($a =~ tr{/}{}) } @targets;
@@ -113,16 +144,17 @@ for my $p (@sorted) {
     # NFD로 저장된 파일도 NFC 이름으로 -e/lstat 검사하면 "존재"로 잡힌다.
     # 즉 단순 -e 검사는 자기 자신을 충돌로 오인해 전부 건너뛴다.
     # 따라서 '진짜 다른 파일'(다른 inode)이 그 이름을 차지한 경우에만 건너뛴다.
+    # --force면 충돌 검사를 우회하고 rename을 강행(기존 파일을 덮어씀).
     my @cur = lstat($p);
     my @tgt = lstat($new);
-    if (@tgt && (!@cur || $tgt[0] != $cur[0] || $tgt[1] != $cur[1])) {
+    if (!$force && @tgt && (!@cur || $tgt[0] != $cur[0] || $tgt[1] != $cur[1])) {
         warn "건너뜀(같은 이름의 다른 항목 존재): $p\n";
         $skipped++;
         next;
     }
 
     if ($dry) {
-        print "[미리보기] $p  →  $new\n";
+        print "[미리보기] $p  →  $new\n" unless $quiet;
         $changed++;
     } elsif (rename($p, $new)) {
         print "변경: $p  →  $new\n" if $verbose;
@@ -138,9 +170,12 @@ my $summary = $dry
     ? "미리보기: ${changed}개 변경 예정"
     : "완료: ${changed}개 변경"
         . ($skipped ? ", ${skipped}개 건너뜀" : "");
-print "$summary\n";
+print "$summary\n" unless $quiet;
 
-if ($notify && !$dry) {
+# NFD2NFC_NO_GUI=1이면 osascript(알림·Finder) 호출을 건너뛴다.
+# 테스트·CI(헤드리스)에서 Finder/알림 부작용·AppleEvent 타임아웃을 피하기 위함.
+my $no_gui = $ENV{NFD2NFC_NO_GUI};
+if ($notify && !$dry && !$no_gui) {
     my $msg = $summary;
     $msg =~ s/"/\\"/g;
     system('/usr/bin/osascript', '-e',
@@ -151,7 +186,7 @@ if ($notify && !$dry) {
 #    선택한 최상위 항목들의 '최종(NFC) 경로'를 Finder에서 보여준다.
 #    - 폴더 하나만 선택했으면 그 폴더를 열어 정리된 내용을 바로 보여줌
 #    - 그 외엔 해당 항목들을 선택 상태로 표시(reveal)
-if ($reveal && !$dry) {
+if ($reveal && !$dry && !$no_gui) {
     my @final;
     for my $arg (@inputs) {
         (my $a = $arg) =~ s{/+$}{};
@@ -168,6 +203,11 @@ if ($reveal && !$dry) {
     }
     reveal_in_finder(@final) if @final;
 }
+
+# 변환 실패·충돌 스킵·존재하지 않는 입력이 하나라도 있으면 비0으로 종료한다.
+# Quick Action은 exit code를 무시(build-workflow.sh가 exit 0으로 감쌈)하므로 GUI엔 영향 없고,
+# CLI/CI 호출 측은 $?로 부분 실패를 감지할 수 있다.
+exit(($skipped || $missing) ? 1 : 0);
 
 # 주어진 절대경로들을 Finder에서 보여준다(폴더 1개면 열기, 그 외엔 선택).
 sub reveal_in_finder {
