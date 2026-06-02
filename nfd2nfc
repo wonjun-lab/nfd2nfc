@@ -185,14 +185,19 @@ for my $p (@sorted) {
     # macOS 파일시스템(APFS·HFS+)은 정규화 비구분(normalization-insensitive)이라
     # NFD로 저장된 파일도 NFC 이름으로 -e/lstat 검사하면 "존재"로 잡힌다.
     # 즉 단순 -e 검사는 자기 자신을 충돌로 오인해 전부 건너뛴다.
-    # 따라서 '진짜 다른 파일'(다른 inode)이 그 이름을 차지한 경우에만 건너뛴다.
-    # --force면 충돌 검사를 우회하고 rename을 강행(기존 파일을 덮어씀).
+    # 따라서 '진짜 다른 파일'(다른 inode)이 그 이름을 차지한 경우에만 충돌로 본다.
+    # (이 충돌은 정규화-구분 FS에서만 발생 — APFS/HFS+에선 NFD/NFC가 같은 inode라 안 생긴다.)
     my @cur = lstat($p);
     my @tgt = lstat($new);
-    if (!$force && @tgt && (!@cur || $tgt[0] != $cur[0] || $tgt[1] != $cur[1])) {
+    my $collision = @tgt && (!@cur || $tgt[0] != $cur[0] || $tgt[1] != $cur[1]);
+    if ($collision && !$force) {
         warn "건너뜀(같은 이름의 다른 항목 존재): $p\n";
         $skipped++;
         next;
+    }
+    # --force는 충돌 검사를 우회한다. 실제로 다른 항목을 덮어쓸 때는 영구 삭제임을 알린다.
+    if ($collision && $force && !$dry) {
+        warn "덮어씀(기존 항목 영구 삭제): $new\n";
     }
 
     if ($dry) {
