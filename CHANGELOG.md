@@ -23,6 +23,7 @@
 - `release.yml`: 릴리스 생성 폴백을 '이미 존재' 케이스로 한정(`create`의 진짜 실패가 `upload`로 가려지지 않게).
 
 ### Fixed
+- `test.sh` 픽스처가 `use utf8` 없이 한글 리터럴을 latin-1로 오인해 **라틴 분해문자 NFD**를 만들던 문제 — 진짜 한글 자모(U+11xx) NFD로 수정. 도구의 핵심 목적인 한글 자모 결합을 실제로 검증하게 됨.
 - 같은 경로를 중복 지정하면 변경 카운트가 부풀려지고 같은 파일을 두 번 rename 시도하던 문제(경로 중복 제거).
 - `test.sh`가 `--reveal` 포함 Quick Action 명령을 실행해 **실제 Finder를 띄우던 부작용** 제거(헤드리스 CI AppleEvent 타임아웃 위험 포함). `NFD2NFC_NO_GUI`로 차단.
 - `test.sh` `--no-recurse` 단언이 약해(트리 전체 `count>=1`) 옵션이 깨져도 통과하던 false pass — 폴더 자신 NFC/내부 미처리를 분리 단언.

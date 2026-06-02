@@ -56,10 +56,13 @@ first_entry() {  # first_entry <base> <d|f>
 }
 
 # 표준 NFD 픽스처: <dir>/보고서.hwp, <dir>/하위폴더/사진.jpg
+# use utf8: 소스의 한글 리터럴을 진짜 한글 코드포인트로 인식해야 한글 자모(U+11xx) NFD가
+# 만들어진다. 빼면 UTF-8 바이트를 latin-1로 오인해 라틴 분해문자 NFD를 테스트하게 된다.
 make_fixture() {
     base="$1"
     mkdir -p "$base"
     /usr/bin/perl -e '
+        use utf8;
         use Unicode::Normalize qw(NFD); use Encode qw(encode_utf8);
         my $b = $ARGV[0];
         open(my $f, ">", "$b/" . encode_utf8(NFD("보고서.hwp"))) or die "$!"; close $f;
@@ -109,6 +112,7 @@ fi
 # [5] 심볼릭 링크 미추적
 mkdir -p "$TMP/t5"
 /usr/bin/perl -e '
+    use utf8;
     use Unicode::Normalize qw(NFD); use Encode qw(encode_utf8);
     my $b = $ARGV[0];
     my $real = "$b/" . encode_utf8(NFD("실제폴더")); mkdir $real;
