@@ -221,6 +221,53 @@ before16=$(entry_bytes "$D16"); md5b16=$(md5 -q "$D16"/*.zip)
 after16=$(entry_bytes "$D16"); md5a16=$(md5 -q "$D16"/*.zip)
 if [ "$before16" = "$after16" ] && [ "$md5b16" = "$md5a16" ]; then ok "압축 내부 엔트리명·내용 불변(스코프 밖)"; else ng "압축 내부 변함: name $before16→$after16"; fi
 
+# ── watch(자동 감시) 케이스 — HOME=$TMP/home 격리, launchctl은 환경변수로 건너뜀 ──
+mknfd_in() { /usr/bin/perl -e 'use utf8;use Unicode::Normalize qw(NFD);use Encode qw(encode_utf8);open(my$f,">",$ARGV[0]."/".encode_utf8(NFD($ARGV[1])));close$f;' "$1" "$2"; }
+
+# [w1] 알 수 없는 watch 하위명령 → usage + 비0
+wout=$(HOME="$TMP/home" /usr/bin/perl "$NFD2NFC" watch bogus 2>&1); wrc=$?
+if echo "$wout" | grep -q "watch" && [ "$wrc" -ne 0 ]; then ok "watch usage(잘못된 하위명령)"; else ng "watch usage 이상: $wout"; fi
+
+# [w2] add → list 절대경로 dedup, remove로 제거
+WH="$TMP/home"; rm -rf "$WH"; mkdir -p "$WH" "$TMP/wf1" "$TMP/wf2"
+HOME="$WH" NFD2NFC_WATCH_NO_LAUNCHCTL=1 /usr/bin/perl "$NFD2NFC" watch add "$TMP/wf1" "$TMP/wf1" "$TMP/wf2" >/dev/null 2>&1
+n=$(HOME="$WH" /usr/bin/perl "$NFD2NFC" watch list 2>/dev/null | grep -c "$TMP/wf")
+HOME="$WH" NFD2NFC_WATCH_NO_LAUNCHCTL=1 /usr/bin/perl "$NFD2NFC" watch remove "$TMP/wf1" >/dev/null 2>&1
+n2=$(HOME="$WH" /usr/bin/perl "$NFD2NFC" watch list 2>/dev/null | grep -c "$TMP/wf")
+if [ "$n" -eq 2 ] && [ "$n2" -eq 1 ]; then ok "watch add/list/remove 목록 관리"; else ng "watch 목록 이상: n=$n n2=$n2"; fi
+
+# [w3] plist 생성 + plutil 유효성
+WH="$TMP/home"; rm -rf "$WH"; mkdir -p "$WH" "$TMP/wp1"
+HOME="$WH" NFD2NFC_WATCH_NO_LAUNCHCTL=1 /usr/bin/perl "$NFD2NFC" watch add "$TMP/wp1" >/dev/null 2>&1
+PL="$WH/Library/LaunchAgents/com.wonjun-lab.nfd2nfc.watch.plist"
+if [ -f "$PL" ] && /usr/bin/plutil -lint "$PL" >/dev/null 2>&1 && grep -q "$TMP/wp1" "$PL"; then ok "watch plist 생성·유효성"; else ng "watch plist 이상"; fi
+
+# [w4] on/off 상태 메시지(실제 launchctl은 게이트)
+WH="$TMP/home"; rm -rf "$WH"; mkdir -p "$WH" "$TMP/wo1"
+HOME="$WH" NFD2NFC_WATCH_NO_LAUNCHCTL=1 /usr/bin/perl "$NFD2NFC" watch add "$TMP/wo1" >/dev/null 2>&1
+offm=$(HOME="$WH" NFD2NFC_WATCH_NO_LAUNCHCTL=1 /usr/bin/perl "$NFD2NFC" watch off 2>&1)
+onm=$(HOME="$WH" NFD2NFC_WATCH_NO_LAUNCHCTL=1 /usr/bin/perl "$NFD2NFC" watch on 2>&1)
+if echo "$offm" | grep -q "중지" && echo "$onm" | grep -q "재개"; then ok "watch on/off 상태"; else ng "watch on/off 이상: $offm / $onm"; fi
+
+# [w5] __run이 등록 폴더 전체 정리(add 즉시 1회) + 로그, 재실행 0개(무한루프 가드)
+WH="$TMP/home"; rm -rf "$WH"; mkdir -p "$WH"
+RA="$TMP/wr1"; RB="$TMP/wr2"; mkdir -p "$RA" "$RB"
+mknfd_in "$RA" "보고서.hwp"; mknfd_in "$RB" "사진.jpg"
+HOME="$WH" NFD2NFC_NO_GUI=1 NFD2NFC_WATCH_NO_LAUNCHCTL=1 /usr/bin/perl "$NFD2NFC" watch add "$RA" "$RB" >/dev/null 2>&1
+left=$(( $(count_nfd "$RA") + $(count_nfd "$RB") ))
+HOME="$WH" NFD2NFC_NO_GUI=1 NFD2NFC_WATCH_NO_LAUNCHCTL=1 /usr/bin/perl "$NFD2NFC" watch __run >/dev/null 2>&1
+log_ok=$(grep -c "run:" "$WH/Library/Logs/nfd2nfc-watch.log" 2>/dev/null || echo 0)
+if [ "$left" -eq 0 ] && [ "${log_ok:-0}" -ge 1 ]; then ok "watch __run 정리 + 로그(무한루프 가드)"; else ng "watch __run 이상: left=$left log=$log_ok"; fi
+
+# [w6] 등록 폴더가 사라져도 __run이 깨지지 않고 살아있는 폴더만 정리
+WH="$TMP/home"; rm -rf "$WH"; mkdir -p "$WH"
+GA="$TMP/wg1"; GB="$TMP/wg2"; mkdir -p "$GA" "$GB"
+HOME="$WH" NFD2NFC_NO_GUI=1 NFD2NFC_WATCH_NO_LAUNCHCTL=1 /usr/bin/perl "$NFD2NFC" watch add "$GA" "$GB" >/dev/null 2>&1
+rm -rf "$GB"
+mknfd_in "$GA" "새.txt"
+HOME="$WH" NFD2NFC_NO_GUI=1 NFD2NFC_WATCH_NO_LAUNCHCTL=1 /usr/bin/perl "$NFD2NFC" watch __run >/dev/null 2>&1; rcrun=$?
+if [ "$rcrun" -eq 0 ] && [ "$(count_nfd "$GA")" -eq 0 ]; then ok "watch __run 미존재 폴더 견고성"; else ng "watch __run 견고성 이상: rc=$rcrun"; fi
+
 # [버전] --version 출력 형식
 ver_out=$(/usr/bin/perl "$NFD2NFC" --version 2>&1)
 if echo "$ver_out" | grep -Eq '^nfd2nfc [0-9]+\.[0-9]+\.[0-9]+$'; then ok "--version 출력 형식"; else ng "--version 형식 이상: $ver_out"; fi
