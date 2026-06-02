@@ -4,6 +4,35 @@
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/),
 버전은 [Semantic Versioning](https://semver.org/lang/ko/)을 따릅니다.
 
+## [Unreleased]
+
+### Added
+- `-q`/`--quiet` — 요약 출력을 생략하는 조용한 모드(경고·에러는 stderr 유지). cron·스크립트용.
+- `-f`/`--force` — 이름 충돌 시 덮어쓰기(기본은 안전하게 건너뜀). `--skip`은 기본값의 명시적 별칭.
+- Quick Action에 `--notify` 추가 — 우클릭 정리 후 완료 토스트(변경/0변경 모두 피드백) + Finder reveal 병행.
+- Homebrew formula `caveats` — CLI만 설치되며 Finder 우클릭 메뉴는 Releases에서 별도 설치임을 안내.
+- 단문자 옵션 묶음 지원(`-nv` == `-n -v`) — `Getopt::Long`의 `bundling`.
+- 존재하지 않는 입력 경로에 대한 경고(오타 등 조용한 무시 방지).
+- `NFD2NFC_NO_GUI=1` 환경변수 — `--notify`/`--reveal`의 osascript 호출을 건너뜀(테스트·CI용).
+- 통합 테스트: 종료 코드, inode 자기오인 방지(1.0.0 회귀 가드), 옵션 묶음, 중복 입력 dedup, `--quiet`, `--force` 케이스.
+
+### Changed
+- 변환 실패·충돌 스킵·존재하지 않는 입력이 있으면 **종료 코드 1**로 종료(이전엔 항상 0이라 자동화가 실패를 감지 못함). Quick Action은 영향 없음.
+- `install.sh`: CLI 설치 위치를 **이미 PATH에 있는 쓰기 가능 표준 위치**(Apple Silicon `/opt/homebrew/bin`, Intel `/usr/local/bin`) 우선 선택 — Apple Silicon에서 설치 직후 바로 실행되도록. PATH 미포함 시 안내 강화.
+- `install.sh`: Finder 새로고침을 `killall`(강제 종료) 대신 graceful quit으로 — 진행 중인 Finder 작업 보호.
+- `release.yml`: 릴리스 생성 폴백을 '이미 존재' 케이스로 한정(`create`의 진짜 실패가 `upload`로 가려지지 않게).
+
+### Fixed
+- 같은 경로를 중복 지정하면 변경 카운트가 부풀려지고 같은 파일을 두 번 rename 시도하던 문제(경로 중복 제거).
+- `test.sh`가 `--reveal` 포함 Quick Action 명령을 실행해 **실제 Finder를 띄우던 부작용** 제거(헤드리스 CI AppleEvent 타임아웃 위험 포함). `NFD2NFC_NO_GUI`로 차단.
+- `test.sh` `--no-recurse` 단언이 약해(트리 전체 `count>=1`) 옵션이 깨져도 통과하던 false pass — 폴더 자신 NFC/내부 미처리를 분리 단언.
+- `test.sh`가 리포 루트의 빌드 산출물(`.workflow.zip`)을 매 실행 덮어쓰던 문제 — 함수 모드로 임시 디렉토리에 빌드.
+- `build-workflow.sh`: heredoc 종료 sentinel이 스크립트 본문에 출현하면 임베드가 조용히 깨지던 취약점 — 사전 검사(`grep -qxF`)로 차단.
+- `build-workflow.sh`: zsh에서 `. ./build-workflow.sh`로 source 시 직접실행 가드가 오발해 의도치 않게 zip 빌드+번들 삭제하던 문제 — `BASH_SOURCE`/`ZSH_EVAL_CONTEXT` 기반 판별.
+- Quick Action 명령에 빈 선택 가드(`[ "$#" -gt 0 ] || exit 0`)와 종료코드 0 래핑 — Automator가 빈 입력/부분 실패를 오류로 표시하지 않게.
+- `install.sh` BIN_DIR 선택의 도달 불가능한 `elif` 죽은 코드 정리.
+- README 영문 사용법 한 줄에 누락됐던 `--reveal`/`-h` 추가.
+
 ## [1.0.1] - 2026-06-01
 
 ### Changed
