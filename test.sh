@@ -8,10 +8,15 @@ NFD2NFC="$HERE/nfd2nfc"
 PASS=0
 FAIL=0
 
+# 테스트 중 osascript(Finder/알림) 부작용·AppleEvent 타임아웃을 차단한다.
+# (Quick Action 명령은 항상 --reveal을 포함하므로 이 가드가 없으면 Finder가 튀어나오고
+#  헤드리스 CI에서는 AppleEvent가 120초 타임아웃 날 수 있다.)
+export NFD2NFC_NO_GUI=1
+
 ok() { PASS=$((PASS + 1)); printf '  \033[32m✓\033[0m %s\n' "$1"; }
 ng() { FAIL=$((FAIL + 1)); printf '  \033[31m✗\033[0m %s\n' "$1"; }
 
-# 디렉토리 아래 NFD로 남은 항목 수 출력
+# 디렉토리 아래 NFD로 남은 항목 수 출력(시작 디렉토리 자신은 제외)
 count_nfd() {
     /usr/bin/perl -CSDA -MFile::Find -e '
         use Unicode::Normalize qw(NFC); use Encode qw(decode_utf8);
@@ -24,6 +29,30 @@ count_nfd() {
         }, $ARGV[0]);
         print $n;
     ' "$1"
+}
+
+# 단일 경로의 basename이 NFC면 exit 0, 아니면 exit 1 (디렉토리 비재귀)
+is_nfc_base() {
+    /usr/bin/perl -e '
+        use Unicode::Normalize qw(NFC); use Encode qw(decode_utf8);
+        my $p = $ARGV[0]; $p =~ s{/+$}{};
+        my $i = rindex($p, "/"); my $b = $i < 0 ? $p : substr($p, $i + 1);
+        my $u = eval { my $c = $b; decode_utf8($c, Encode::FB_CROAK) };
+        exit((defined $u && NFC($u) eq $u) ? 0 : 1);
+    ' "$1"
+}
+
+# t10 등에서 최상위 첫 (디렉토리|파일) 항목 경로를 출력
+first_entry() {  # first_entry <base> <d|f>
+    /usr/bin/perl -e '
+        opendir(my $d, $ARGV[0]) or exit 0;
+        for (sort readdir $d) {
+            next if /^\.\.?$/;
+            my $p = "$ARGV[0]/$_";
+            if ($ARGV[1] eq "d") { next unless -d $p } else { next unless -f $p }
+            print $p; last;
+        }
+    ' "$1" "$2"
 }
 
 # 표준 NFD 픽스처: <dir>/보고서.hwp, <dir>/하위폴더/사진.jpg
@@ -58,11 +87,24 @@ make_fixture "$TMP/t3"
 /usr/bin/perl "$NFD2NFC" --dry-run "$TMP/t3" >/dev/null 2>&1
 if [ "$(count_nfd "$TMP/t3")" -eq 3 ]; then ok "dry-run은 실제 변경 안 함"; else ng "dry-run이 파일을 변경함"; fi
 
-# [4] --no-recurse: 지정 폴더만, 하위는 유지
+# [4] --no-recurse: 지정한 폴더 자신은 NFC로, 그 내부(사진.jpg)는 미처리로 남는다.
+#     약한 단언(트리 전체 count>=1)은 옵션이 깨져도 통과하므로, 두 측면을 분리 단언한다.
 make_fixture "$TMP/t4"
-sub=$(/usr/bin/perl -e 'opendir(my$d,$ARGV[0]);for(readdir$d){next if/^\.\.?$/;next unless -d "$ARGV[0]/$_";print "$ARGV[0]/$_";last}' "$TMP/t4")
-/usr/bin/perl "$NFD2NFC" --no-recurse "$sub" >/dev/null 2>&1
-if [ "$(count_nfd "$TMP/t4")" -ge 1 ]; then ok "--no-recurse는 하위 미처리"; else ng "--no-recurse가 하위까지 처리함"; fi
+sub=$(first_entry "$TMP/t4" d)
+if [ -z "$sub" ] || [ ! -d "$sub" ]; then
+    ng "[4] 픽스처 하위폴더 탐색 실패(빈 경로)"
+else
+    /usr/bin/perl "$NFD2NFC" --no-recurse "$sub" >/dev/null 2>&1
+    # 변환 후 하위폴더는 NFC명으로 바뀌므로 부모에서 다시 찾는다.
+    subnfc=$(first_entry "$TMP/t4" d)
+    inside_nfd=$(count_nfd "$subnfc")
+    if is_nfc_base "$subnfc"; then base_ok=1; else base_ok=0; fi
+    if [ "$base_ok" -eq 1 ] && [ "$inside_nfd" -eq 1 ]; then
+        ok "--no-recurse: 폴더 자신만 NFC, 내부(사진.jpg) 미처리"
+    else
+        ng "--no-recurse 이상: 폴더basename NFC=$base_ok, 내부 NFD수=$inside_nfd (기대 1,1)"
+    fi
+fi
 
 # [5] 심볼릭 링크 미추적
 mkdir -p "$TMP/t5"
@@ -76,17 +118,60 @@ mkdir -p "$TMP/t5"
 link_count=$(/usr/bin/perl -e 'my$n=0;opendir(my$d,$ARGV[0]);for(readdir$d){next if/^\.\.?$/;$n++ if -l "$ARGV[0]/$_"}print$n' "$TMP/t5")
 if [ "$link_count" -eq 1 ] && [ "$(count_nfd "$TMP/t5")" -eq 0 ]; then ok "심볼릭 링크 미추적 + 이름만 정규화"; else ng "심볼릭 링크 처리 이상"; fi
 
-# [6] 생성된 Quick Action 명령 실행 (Automator 임시파일 방식)
-"$HERE/build-workflow.sh" >/dev/null 2>&1
-unzip -oq "$HERE/NFC로 이름 정리.workflow.zip" -d "$TMP/wf"
-DOC=$(find "$TMP/wf" -name document.wflow)
-/usr/bin/plutil -extract "actions.0.action.ActionParameters.COMMAND_STRING" raw -o "$TMP/qa_cmd.sh" "$DOC"
-make_fixture "$TMP/t6"
-/usr/bin/perl -e '
-    my @a; opendir(my $d, $ARGV[1]); for (readdir $d) { next if /^\.\.?$/; push @a, "$ARGV[1]/$_" } closedir $d;
-    system("/bin/zsh", $ARGV[0], @a);
-' "$TMP/qa_cmd.sh" "$TMP/t6"
-if [ "$(count_nfd "$TMP/t6")" -eq 0 ]; then ok "Quick Action 명령 실행 변환 성공"; else ng "Quick Action 명령 변환 실패"; fi
+# [6] 생성된 Quick Action 명령 실행. 리포 루트 산출물을 건드리지 않게 함수 모드로 $TMP에 빌드한다.
+# shellcheck source=build-workflow.sh
+( . "$HERE/build-workflow.sh"; build_workflow_bundle "$TMP/qa.workflow" ) >/dev/null 2>&1
+DOC="$TMP/qa.workflow/Contents/document.wflow"
+if [ ! -f "$DOC" ]; then
+    ng "[6] Quick Action 빌드 실패(document.wflow 없음)"
+else
+    /usr/bin/plutil -extract "actions.0.action.ActionParameters.COMMAND_STRING" raw -o "$TMP/qa_cmd.sh" "$DOC"
+    make_fixture "$TMP/t6"
+    /usr/bin/perl -e '
+        my @a; opendir(my $d, $ARGV[1]); for (readdir $d) { next if /^\.\.?$/; push @a, "$ARGV[1]/$_" } closedir $d;
+        system("/bin/zsh", $ARGV[0], @a);
+    ' "$TMP/qa_cmd.sh" "$TMP/t6"
+    if [ "$(count_nfd "$TMP/t6")" -eq 0 ]; then ok "Quick Action 명령 실행 변환 성공"; else ng "Quick Action 명령 변환 실패"; fi
+fi
+
+# [7] 종료 코드: 정상 변환은 0, 존재하지 않는 입력은 비0(자동화가 부분 실패를 감지 가능)
+make_fixture "$TMP/t7"
+/usr/bin/perl "$NFD2NFC" "$TMP/t7" >/dev/null 2>&1; rc_ok=$?
+/usr/bin/perl "$NFD2NFC" "$TMP/없는경로_xyz" >/dev/null 2>&1; rc_missing=$?
+if [ "$rc_ok" -eq 0 ] && [ "$rc_missing" -ne 0 ]; then ok "종료 코드: 정상 0 / 실패 비0"; else ng "종료 코드 이상: 정상=$rc_ok 실패=$rc_missing"; fi
+
+# [8] inode 비교가 자기 자신을 충돌로 오인하지 않음 (1.0.0 핵심 버그의 회귀 가드).
+#     '진짜 다른 inode가 NFC명을 점유'한 충돌은 APFS 정규화 비구분 특성상 단일 볼륨에서
+#     재현 불가하므로, 그 반대(자기 자신 오인으로 전부 건너뛰는 회귀)를 막는다.
+make_fixture "$TMP/t8"
+err=$(/usr/bin/perl "$NFD2NFC" "$TMP/t8" 2>&1 >/dev/null)
+if [ "$(count_nfd "$TMP/t8")" -eq 0 ] && ! printf '%s' "$err" | grep -q "건너뜀"; then
+    ok "inode 자기오인 없음(전부 변환, 건너뜀 경고 0)"
+else
+    ng "inode 자기오인 의심(건너뜀 경고: $err)"
+fi
+
+# [9] 단문자 옵션 묶음(-nv == -n -v): dry-run+verbose로 동작하되 실제 변경은 없어야 함
+make_fixture "$TMP/t9"
+out=$(/usr/bin/perl "$NFD2NFC" -nv "$TMP/t9" 2>&1)
+if echo "$out" | grep -q "미리보기" && [ "$(count_nfd "$TMP/t9")" -eq 3 ]; then ok "-nv 묶음(dry-run+verbose)"; else ng "-nv 묶음 이상: $out"; fi
+
+# [10] 중복 입력은 한 번만 처리(카운트 부풀림·이중 rename 없음)
+make_fixture "$TMP/t10"
+f=$(first_entry "$TMP/t10" f)
+out=$(/usr/bin/perl "$NFD2NFC" --no-recurse "$f" "$f" 2>&1)
+if echo "$out" | grep -q "1개 변경"; then ok "중복 입력 dedup(1개 변경)"; else ng "중복 입력 dedup 실패: $out"; fi
+
+# [11] --quiet: 요약 출력을 억제(stdout 비움)하되 변환은 정상 수행
+make_fixture "$TMP/t11"
+qout=$(/usr/bin/perl "$NFD2NFC" --quiet "$TMP/t11" 2>/dev/null)
+if [ -z "$qout" ] && [ "$(count_nfd "$TMP/t11")" -eq 0 ]; then ok "--quiet: 무출력 + 변환 수행"; else ng "--quiet 이상(out=[$qout])"; fi
+
+# [12] --force: 충돌 검사를 우회해도 일반 변환을 정상 수행하고 건너뜀 경고가 없어야 함.
+#      (진짜 다른 inode가 NFC명을 점유한 충돌은 APFS 정규화 비구분 특성상 단일 볼륨에서 재현 불가)
+make_fixture "$TMP/t12"
+ferr=$(/usr/bin/perl "$NFD2NFC" --force "$TMP/t12" 2>&1 >/dev/null)
+if [ "$(count_nfd "$TMP/t12")" -eq 0 ] && [ -z "$ferr" ]; then ok "--force: 정상 변환 + 경고 없음"; else ng "--force 이상(err=[$ferr])"; fi
 
 # [버전] --version 출력 형식
 ver_out=$(/usr/bin/perl "$NFD2NFC" --version 2>&1)
