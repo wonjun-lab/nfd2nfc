@@ -177,6 +177,32 @@ make_fixture "$TMP/t12"
 ferr=$(/usr/bin/perl "$NFD2NFC" --force "$TMP/t12" 2>&1 >/dev/null)
 if [ "$(count_nfd "$TMP/t12")" -eq 0 ] && [ -z "$ferr" ]; then ok "--force: 정상 변환 + 경고 없음"; else ng "--force 이상(err=[$ferr])"; fi
 
+# [13] 셸(zsh glob/탭완성)이 NFC로 정규화한 인자로도 디스크 NFD를 변환 (disk_real_path).
+#      셸이 인자를 NFC로 넘기면 인자 basename은 NFC지만 디스크 엔트리는 NFD다.
+D13="$TMP/t13"; mkdir -p "$D13"
+/usr/bin/perl -e 'use utf8;use Unicode::Normalize qw(NFD);use Encode qw(encode_utf8);
+  open(my$f,">",$ARGV[0]."/".encode_utf8(NFD("계약서.pdf")));close$f;' "$D13"
+nfc_arg="$D13/$(/usr/bin/perl -e 'use utf8;use Unicode::Normalize qw(NFC);use Encode qw(encode_utf8);print encode_utf8(NFC("계약서.pdf"))')"
+/usr/bin/perl "$NFD2NFC" "$nfc_arg" >/dev/null 2>&1
+if [ "$(count_nfd "$D13")" -eq 0 ]; then ok "NFC 인자(셸 정규화)로도 디스크 NFD 변환"; else ng "disk_real_path 실패(NFC 인자 변환 누락)"; fi
+
+# [14] NFC로 저장된 디스크 파일에 NFD 철자 인자 → 실제 변화 없으므로 '0개 변경'(거짓 카운트 방지)
+D14="$TMP/t14"; mkdir -p "$D14"
+printf x > "$D14/$(/usr/bin/perl -e 'use utf8;use Unicode::Normalize qw(NFC);use Encode qw(encode_utf8);print encode_utf8(NFC("문서.txt"))')"
+nfd_arg="$D14/$(/usr/bin/perl -e 'use utf8;use Unicode::Normalize qw(NFD);use Encode qw(encode_utf8);print encode_utf8(NFD("문서.txt"))')"
+out14=$(/usr/bin/perl "$NFD2NFC" "$nfd_arg" 2>&1)
+if echo "$out14" | grep -q "0개 변경"; then ok "NFC 디스크 + NFD 인자 → 거짓 카운트 없음"; else ng "거짓 카운트: $out14"; fi
+
+# [15] 같은 디스크 항목을 NFD/NFC 다른 철자로 중복 지정 → 카운트 부풀림·이중 처리 없음
+D15="$TMP/t15"; mkdir -p "$D15"
+/usr/bin/perl -e 'use utf8;use Unicode::Normalize qw(NFD);use Encode qw(encode_utf8);
+  my$d=$ARGV[0];my$s="$d/".encode_utf8(NFD("폴더"));mkdir $s;
+  open(my$f,">","$s/".encode_utf8(NFD("파일.txt")));close$f;' "$D15"
+nfc_dir="$D15/$(/usr/bin/perl -e 'use utf8;use Unicode::Normalize qw(NFC);use Encode qw(encode_utf8);print encode_utf8(NFC("폴더"))')"
+base15=$(/usr/bin/perl "$NFD2NFC" -n "$D15" 2>&1 | tail -1)
+dup15=$(/usr/bin/perl "$NFD2NFC" -n "$D15" "$nfc_dir" 2>&1 | tail -1)
+if [ "$base15" = "$dup15" ]; then ok "NFD/NFC 철자 중복 입력 dedup(카운트 안 부풀림)"; else ng "dedup 실패: base=[$base15] dup=[$dup15]"; fi
+
 # [버전] --version 출력 형식
 ver_out=$(/usr/bin/perl "$NFD2NFC" --version 2>&1)
 if echo "$ver_out" | grep -Eq '^nfd2nfc [0-9]+\.[0-9]+\.[0-9]+$'; then ok "--version 출력 형식"; else ng "--version 형식 이상: $ver_out"; fi
