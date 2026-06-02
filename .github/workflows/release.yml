@@ -24,6 +24,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" nfd2nfc-quick-action.zip \
-            --title "${GITHUB_REF_NAME}" --generate-notes \
-          || gh release upload "${GITHUB_REF_NAME}" nfd2nfc-quick-action.zip --clobber
+          set -euo pipefail
+          # 릴리스 존재 여부로 분기. `create || upload`는 create의 진짜 실패(권한·네트워크)를
+          # upload 실패로 가려 디버깅을 어렵게 하므로, 존재할 때만(재실행/재태그) 자산을 갱신한다.
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" nfd2nfc-quick-action.zip --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" nfd2nfc-quick-action.zip \
+              --title "${GITHUB_REF_NAME}" --generate-notes
+          fi
