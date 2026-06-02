@@ -203,6 +203,24 @@ base15=$(/usr/bin/perl "$NFD2NFC" -n "$D15" 2>&1 | tail -1)
 dup15=$(/usr/bin/perl "$NFD2NFC" -n "$D15" "$nfc_dir" 2>&1 | tail -1)
 if [ "$base15" = "$dup15" ]; then ok "NFD/NFC 철자 중복 입력 dedup(카운트 안 부풀림)"; else ng "dedup 실패: base=[$base15] dup=[$dup15]"; fi
 
+# [16] 압축 파일의 '내부' 엔트리명은 스코프 밖 — 외부 파일명만 정규화되고 내부·내용은 불변(한계 회귀 가드)
+D16="$TMP/t16"; mkdir -p "$D16"
+( cd "$D16" || exit
+  inner=$(/usr/bin/perl -e 'use utf8;use Unicode::Normalize qw(NFD);use Encode qw(encode_utf8);print encode_utf8(NFD("안.txt"))')
+  printf x > "$inner"
+  arc=$(/usr/bin/perl -e 'use utf8;use Unicode::Normalize qw(NFD);use Encode qw(encode_utf8);print encode_utf8(NFD("자료.zip"))')
+  zip -q "$arc" "$inner" && rm -f "$inner" )
+entry_bytes() { /usr/bin/python3 -c '
+import zipfile,glob,sys
+z=glob.glob(sys.argv[1]+"/*.zip")[0]
+i=zipfile.ZipFile(z).infolist()[0]
+raw=i.filename.encode("utf-8") if (i.flag_bits & 0x800) else i.filename.encode("cp437")
+print(raw.hex())' "$1"; }
+before16=$(entry_bytes "$D16"); md5b16=$(md5 -q "$D16"/*.zip)
+/usr/bin/perl "$NFD2NFC" -q "$D16"
+after16=$(entry_bytes "$D16"); md5a16=$(md5 -q "$D16"/*.zip)
+if [ "$before16" = "$after16" ] && [ "$md5b16" = "$md5a16" ]; then ok "압축 내부 엔트리명·내용 불변(스코프 밖)"; else ng "압축 내부 변함: name $before16→$after16"; fi
+
 # [버전] --version 출력 형식
 ver_out=$(/usr/bin/perl "$NFD2NFC" --version 2>&1)
 if echo "$ver_out" | grep -Eq '^nfd2nfc [0-9]+\.[0-9]+\.[0-9]+$'; then ok "--version 출력 형식"; else ng "--version 형식 이상: $ver_out"; fi
