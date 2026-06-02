@@ -37,6 +37,12 @@ use Getopt::Long qw(GetOptions);
 
 our $VERSION = "1.0.1";
 
+# 첫 인자가 'watch'면 자동 감시 서브커맨드로 분기(옵션 파싱 전에 가로챈다).
+if (@ARGV && $ARGV[0] eq 'watch') {
+    shift @ARGV;
+    exit watch_main(@ARGV);
+}
+
 my ($dry, $recurse, $notify, $verbose, $help, $version, $reveal, $quiet, $force, $skip)
     = (0, 1, 0, 0, 0, 0, 0, 0, 0, 0);
 # 대소문자 구분: -v(verbose)와 -V(version)가 섞이지 않도록.
@@ -270,3 +276,191 @@ sub reveal_in_finder {
     }
     system('/usr/bin/osascript', '-e', $script);
 }
+
+# ── 자동 감시(watch) 서브커맨드 ──────────────────────────────────────────────
+# 등록한 폴더를 launchd(WatchPaths)가 감시하다가 변경 시 'watch __run'을 실행해
+# 코어 변환을 각 폴더에 재호출한다. 의존성 0(perl + launchd), 옵트인.
+use Cwd ();
+
+# 상단 디스패치(exit watch_main)가 런타임에 먼저 실행되므로, 파일 끝 my 변수는
+# 그 시점에 미초기화다. 따라서 상수는 my가 아니라 sub로 둔다(런타임 순서 무관).
+sub watch_label       { 'com.wonjun-lab.nfd2nfc.watch' }
+sub watch_support_dir { "$ENV{HOME}/Library/Application Support/nfd2nfc" }
+sub watch_list_file   { watch_support_dir() . "/folders.list" }
+sub watch_plist_file  { "$ENV{HOME}/Library/LaunchAgents/" . watch_label() . ".plist" }
+sub watch_log_file    { "$ENV{HOME}/Library/Logs/nfd2nfc-watch.log" }
+
+sub watch_usage {
+    print <<'TXT';
+nfd2nfc watch — 폴더 자동 NFC 감시
+
+사용법:
+  nfd2nfc watch add <폴더 ...>     감시 폴더 등록(+즉시 1회 정리)
+  nfd2nfc watch remove <폴더 ...>  등록 해제
+  nfd2nfc watch list               등록 폴더·상태 보기
+  nfd2nfc watch on | off           감시 재개 / 일시 중지
+TXT
+}
+
+sub watch_main {
+    my ($cmd, @args) = @_;
+    $cmd //= '';
+    return watch_add(@args)    if $cmd eq 'add';
+    return watch_remove(@args) if $cmd eq 'remove';
+    return watch_list()        if $cmd eq 'list';
+    return watch_on()          if $cmd eq 'on';
+    return watch_off()         if $cmd eq 'off';
+    return watch_run()         if $cmd eq '__run';
+    watch_usage();
+    return 1;
+}
+
+# ── 목록 I/O ──
+sub watch_read_list {
+    my $f = watch_list_file();
+    return () unless -f $f;
+    open(my $fh, '<', $f) or return ();
+    my @dirs = grep { length } map { my $l = $_; $l =~ s/\s+$//; $l } <$fh>;
+    close $fh;
+    return @dirs;
+}
+sub watch_write_list {
+    my @dirs = @_;
+    system('/bin/mkdir', '-p', watch_support_dir());
+    open(my $fh, '>', watch_list_file()) or die "목록을 쓸 수 없음: $!\n";
+    print $fh "$_\n" for @dirs;
+    close $fh;
+}
+# ~ 확장 + 절대경로(존재하는 경로만, 아니면 undef)
+sub watch_abs {
+    my ($p) = @_;
+    $p =~ s{^~(/|$)}{$ENV{HOME}$1};
+    return Cwd::abs_path($p);
+}
+
+# ── plist 생성 ──
+sub xml_esc { my $s = shift; $s =~ s/&/&amp;/g; $s =~ s/</&lt;/g; $s =~ s/>/&gt;/g; return $s; }
+sub watch_write_plist {
+    my @dirs = watch_read_list();
+    my $self = Cwd::abs_path($0) // $0;
+    my $log  = watch_log_file();
+    my $paths = join "\n", map { "\t\t<string>" . xml_esc($_) . "</string>" } @dirs;
+    my $body = <<"PLIST";
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+\t<key>Label</key>
+\t<string>@{[ xml_esc(watch_label()) ]}</string>
+\t<key>ProgramArguments</key>
+\t<array>
+\t\t<string>@{[ xml_esc($self) ]}</string>
+\t\t<string>watch</string>
+\t\t<string>__run</string>
+\t</array>
+\t<key>WatchPaths</key>
+\t<array>
+$paths
+\t</array>
+\t<key>ThrottleInterval</key>
+\t<integer>10</integer>
+\t<key>StandardOutPath</key>
+\t<string>@{[ xml_esc($log) ]}</string>
+\t<key>StandardErrorPath</key>
+\t<string>@{[ xml_esc($log) ]}</string>
+\t<key>RunAtLoad</key>
+\t<false/>
+</dict>
+</plist>
+PLIST
+    system('/bin/mkdir', '-p', "$ENV{HOME}/Library/LaunchAgents");
+    open(my $fh, '>', watch_plist_file()) or die "plist를 쓸 수 없음: $!\n";
+    print $fh $body;
+    close $fh;
+}
+
+# ── launchctl (NFD2NFC_WATCH_NO_LAUNCHCTL=1이면 건너뜀 — 테스트/CI용) ──
+sub watch_load {
+    return if $ENV{NFD2NFC_WATCH_NO_LAUNCHCTL};
+    my $p = watch_plist_file();
+    return unless -f $p;
+    system('/bin/launchctl', 'unload', $p);   # 기존 로드 정리(실패 무시)
+    system('/bin/launchctl', 'load', $p);
+}
+sub watch_unload {
+    return if $ENV{NFD2NFC_WATCH_NO_LAUNCHCTL};
+    system('/bin/launchctl', 'unload', watch_plist_file());
+}
+sub watch_is_loaded {
+    return 0 if $ENV{NFD2NFC_WATCH_NO_LAUNCHCTL};
+    return (system('/bin/launchctl', 'list', watch_label()) == 0) ? 1 : 0;
+}
+
+# ── 실행(__run): 등록 폴더 전체 정리 + 로그 + 변경시 알림 ──
+sub watch_log {
+    my ($msg) = @_;
+    system('/bin/mkdir', '-p', "$ENV{HOME}/Library/Logs");
+    open(my $fh, '>>', watch_log_file()) or return;
+    my @t = localtime;
+    printf $fh "[%04d-%02d-%02d %02d:%02d:%02d] %s\n",
+        $t[5] + 1900, $t[4] + 1, $t[3], $t[2], $t[1], $t[0], $msg;
+    close $fh;
+}
+sub watch_run {
+    my $self = Cwd::abs_path($0) // $0;
+    my @dirs = grep { -d $_ } watch_read_list();
+    my $total = 0;
+    for my $d (@dirs) {
+        # 리스트폼 파이프 → 셸 미경유(경로 특수문자 안전). 코어를 일반 모드로 호출해 요약 캡처.
+        my @cmd = ($self, '--', $d);
+        if (open(my $ph, '-|', @cmd)) {
+            local $/;
+            my $out = <$ph>;
+            close $ph;
+            if (defined $out && $out =~ /완료:\s*(\d+)개 변경/) { $total += $1; }
+        }
+    }
+    watch_log("run: ${total}개 변경 (" . scalar(@dirs) . "개 폴더)");
+    if ($total > 0 && !$ENV{NFD2NFC_NO_GUI}) {
+        my $msg = "${total}개 파일 이름을 NFC로 자동 정리했습니다";
+        system('/usr/bin/osascript', '-e',
+               qq{display notification "$msg" with title "nfd2nfc 자동 감시"});
+    }
+    return 0;
+}
+
+# ── 사용자 명령 ──
+sub watch_add {
+    my @new;
+    for my $arg (@_) {
+        my $abs = watch_abs($arg);
+        if (!defined $abs || !-d $abs) { warn "폴더가 아니거나 없음: $arg\n"; next; }
+        push @new, $abs;
+    }
+    return 1 unless @new;
+    my %seen; my @dirs = grep { !$seen{$_}++ } (watch_read_list(), @new);
+    watch_write_list(@dirs);
+    watch_write_plist();
+    watch_load();
+    watch_run();
+    print "감시 등록: ", join(", ", @new), "\n";
+    return 0;
+}
+sub watch_remove {
+    my %rm = map { my $a = watch_abs($_) // $_; ($a => 1) } @_;
+    my @dirs = grep { !$rm{$_} } watch_read_list();
+    watch_write_list(@dirs);
+    if (@dirs) { watch_write_plist(); watch_load(); }
+    else       { watch_unload(); unlink watch_plist_file(); }
+    print "감시 해제 완료. 남은 폴더: ", scalar(@dirs), "개\n";
+    return 0;
+}
+sub watch_list {
+    my @dirs = watch_read_list();
+    my $active = watch_is_loaded() ? "활성" : "중지";
+    print "자동 감시: ", (@dirs ? "$active · 폴더 " . scalar(@dirs) . "개" : "등록된 폴더 없음"), "\n";
+    print "  • $_\n" for @dirs;
+    return 0;
+}
+sub watch_on  { watch_write_plist(); watch_load(); print "감시 재개\n"; return 0; }
+sub watch_off { watch_unload(); print "감시 중지\n"; return 0; }
